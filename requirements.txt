@@ -1,0 +1,7 @@
+PyQt5==5.15.9
+keyboard==0.13.5
+mouse==0.7.1
+pyautogui==0.9.54
+pandas==2.1.4
+screeninfo==0.8.1
+pyinstaller==6.12.0 
