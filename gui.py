@@ -2,7 +2,7 @@ import json
 import time
 import pyautogui
 import pandas as pd
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLabel, QComboBox, QFileDialog, QInputDialog, QLineEdit, QMessageBox, QSpinBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLabel, QComboBox, QFileDialog, QInputDialog, QLineEdit, QMessageBox, QSpinBox, QTextEdit, QDialog
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QFontDatabase
 from screeninfo import get_monitors
@@ -51,18 +51,19 @@ TRANSLATIONS = {
         "error_occurred": "Произошла ошибка: ",
         "language": "Язык:",
         "help_text": """
-Помощник рассылки - программа для автоматизации действий с мышью и клавиатурой.
+Помощник рассылки v0.2 - программа для автоматизации действий с мышью и клавиатурой.
 
 Основные функции:
 • Запись и выполнение кликов мышью
 • Ввод текста с настраиваемой скоростью
-• Работа с CSV-файлами
+• Работа с CSV-файлами (построчный ввод)
 • Сохранение и загрузка сценариев
+• Двуязычный интерфейс (RU/EN)
 
 Режимы выполнения:
-• Один раз - выполнение сценария один раз
-• Итерации - выполнение сценария указанное количество раз
-• Цикл - бесконечное повторение сценария
+• Один раз - выполнение сценария один раз (для CSV - первая строка)
+• Итерации - выполнение сценария указанное количество раз (для CSV - соответствующие строки)
+• Цикл - бесконечное повторение сценария (для CSV - построчно до конца файла)
 
 Горячие клавиши:
 • F6 - запись клика мышью
@@ -74,24 +75,26 @@ TRANSLATIONS = {
 • Двойной клик для редактирования
 • Кнопка удаления для удаления выбранного действия
 
+Работа с CSV:
+• Выбор нужных столбцов из файла
+• Создание шаблона с переменными {{column_name}}
+• Автоматическая подстановка значений из выбранных столбцов
+• Построчная обработка в соответствии с режимом выполнения
+
 Специальные возможности:
 • Задержки между действиями
 • Настраиваемая скорость ввода текста
 • Поддержка переноса строки (\\n)
-• Работа с CSV-файлами для массового ввода
-
-Формат CSV-файла:
-• Каждая строка - отдельная итерация
-• Значения разделяются запятыми
-• Автоматический переход между полями (Tab)
-• Автоматический переход на новую строку (Enter)
+• Выбор экрана для работы
 
 Безопасность:
 • Возможность экстренной остановки (Esc)
 • Проверка корректности CSV-файлов
+• Валидация шаблонов и выбранных столбцов
 • Обработка ошибок при выполнении
 
 Создано Hidetoshi Karita
+Версия 0.2
 """
     },
     "EN": {
@@ -132,18 +135,19 @@ TRANSLATIONS = {
         "error_occurred": "An error occurred: ",
         "language": "Language:",
         "help_text": """
-Mailing Helper - a program for automating mouse and keyboard actions.
+Mailing Helper v0.2 - a program for automating mouse and keyboard actions.
 
 Main functions:
 • Recording and executing mouse clicks
 • Text input with adjustable speed
-• Working with CSV files
+• CSV file support (line-by-line input)
 • Saving and loading scenarios
+• Bilingual interface (RU/EN)
 
 Execution modes:
-• Once - single execution of the scenario
-• Iterations - executing the scenario a specified number of times
-• Loop - infinite repetition of the scenario
+• Once - single execution of the scenario (for CSV - first row)
+• Iterations - executing the scenario a specified number of times (for CSV - corresponding rows)
+• Loop - infinite repetition of the scenario (for CSV - row by row until end of file)
 
 Hotkeys:
 • F6 - record mouse click
@@ -155,24 +159,26 @@ Scenario management:
 • Double-click to edit
 • Delete button to remove selected action
 
+Working with CSV:
+• Selection of required columns from file
+• Template creation with variables {{column_name}}
+• Automatic value substitution from selected columns
+• Line-by-line processing according to execution mode
+
 Special features:
 • Delays between actions
 • Adjustable text input speed
 • Line break support (\\n)
-• CSV file support for mass input
-
-CSV file format:
-• Each row - separate iteration
-• Values separated by commas
-• Automatic field navigation (Tab)
-• Automatic new line (Enter)
+• Screen selection for operation
 
 Safety:
 • Emergency stop capability (Esc)
 • CSV file validation
+• Template and selected columns validation
 • Error handling during execution
 
 Created by Hidetoshi Karita
+Version 0.2
 """
     }
 }
@@ -184,6 +190,85 @@ class DragDropListWidget(QListWidget):
         self.setDragDropMode(QListWidget.InternalMove)
         self.setSelectionMode(QListWidget.SingleSelection)
         self.setDefaultDropAction(Qt.MoveAction)
+
+class CsvInputDialog(QDialog):
+    def __init__(self, csv_path, parent=None):
+        super().__init__(parent)
+        self.csv_path = csv_path
+        self.selected_columns = []
+        self.initUI()
+        
+    def initUI(self):
+        self.setWindowTitle("Выбор столбцов CSV")
+        self.setGeometry(200, 200, 400, 500)
+        
+        layout = QVBoxLayout()
+        
+        # Список столбцов
+        columns_label = QLabel("Доступные столбцы:")
+        self.columns_list = QListWidget()
+        self.columns_list.setSelectionMode(QListWidget.MultiSelection)
+        
+        # Загружаем столбцы из CSV
+        try:
+            df = pd.read_csv(self.csv_path)
+            self.columns_list.addItems(df.columns)
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось прочитать CSV файл: {str(e)}")
+            self.close()
+            return
+            
+        # Поле для ввода шаблона
+        template_label = QLabel("Шаблон текста (используйте {{column_name}} для вставки значений):\nПример: Здравствуйте, {{name}}! Ваш баланс: {{balance}}")
+        self.template_input = QTextEdit()
+        
+        # Кнопки
+        buttons_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Отмена")
+        
+        ok_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        
+        buttons_layout.addWidget(ok_button)
+        buttons_layout.addWidget(cancel_button)
+        
+        # Добавляем все элементы в макет
+        layout.addWidget(columns_label)
+        layout.addWidget(self.columns_list)
+        layout.addWidget(template_label)
+        layout.addWidget(self.template_input)
+        layout.addLayout(buttons_layout)
+        
+        self.setLayout(layout)
+        
+    def accept(self):
+        self.selected_columns = [item.text() for item in self.columns_list.selectedItems()]
+        self.template = self.template_input.toPlainText()
+        
+        # Проверяем, что выбран хотя бы один столбец и введен шаблон
+        if not self.selected_columns:
+            QMessageBox.warning(self, "Ошибка", "Выберите хотя бы один столбец!")
+            return
+            
+        if not self.template:
+            QMessageBox.warning(self, "Ошибка", "Введите шаблон текста!")
+            return
+            
+        # Проверяем, что все переменные в шаблоне соответствуют выбранным столбцам
+        template_vars = [var.strip("{}") for var in self.template.split("{{")[1:]]
+        for var in template_vars:
+            var = var.split("}}")[0]
+            if var not in self.selected_columns:
+                QMessageBox.warning(self, "Ошибка", f"Столбец '{var}' использован в шаблоне, но не выбран в списке!")
+                return
+                
+        super().accept()  # Вызываем accept у родительского класса QDialog
+        
+    def reject(self):
+        self.selected_columns = []
+        self.template = ""
+        super().reject()  # Вызываем reject у родительского класса QDialog
 
 class MailingHelperApp(QWidget):
     def __init__(self):
@@ -637,8 +722,10 @@ class MailingHelperApp(QWidget):
                     "", "CSV Files (*.csv)")
                 if file_path:
                     try:
-                        df = pd.read_csv(file_path)
-                        self.steps_list.addItem(f"Input CSV: {file_path}")
+                        dialog = CsvInputDialog(file_path, self)
+                        dialog.exec()
+                        if dialog.selected_columns and dialog.template:
+                            self.steps_list.addItem(f"Input CSV: {file_path} | Template: {dialog.template} | Columns: {','.join(dialog.selected_columns)}")
                     except Exception as e:
                         QMessageBox.warning(self, self.translations["error"], 
                             f"{self.translations['csv_error']}{str(e)}")

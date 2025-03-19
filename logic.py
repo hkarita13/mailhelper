@@ -39,14 +39,20 @@ def parse_step(step_text):
         text = step_text.split(":", 1)[1].strip()
         return "input", text
     elif "Input CSV:" in step_text or "Ввод (CSV):" in step_text:
-        file_path = step_text.split(":", 1)[1].strip()
-        return "csv", file_path
+        # Парсим параметры CSV
+        parts = step_text.split("|")
+        file_path = parts[0].split(":", 1)[1].strip()
+        template = parts[1].split(":", 1)[1].strip()
+        columns = parts[2].split(":", 1)[1].strip().split(",")
+        return "csv", (file_path, template, columns)
     else:
         return None, None
 
 def run_scenario(steps_list, mode="once", iterations=1, typing_speed=50):
     """Запускает сценарий с указанным режимом выполнения"""
-    def execute_steps():
+    def execute_steps(csv_row_index=None):
+        csv_files = {}  # Словарь для хранения загруженных CSV файлов
+        
         for i in range(steps_list.count()):
             if keyboard.is_pressed("esc"):
                 QMessageBox.information(None, "Остановка", "Сценарий остановлен пользователем")
@@ -65,16 +71,32 @@ def run_scenario(steps_list, mode="once", iterations=1, typing_speed=50):
                     return False
             elif action_type == "csv":
                 try:
-                    df = pd.read_csv(params)
-                    for _, row in df.iterrows():
-                        if keyboard.is_pressed("esc"):
-                            QMessageBox.information(None, "Остановка", "Сценарий остановлен пользователем")
+                    file_path, template, columns = params
+                    
+                    # Загружаем CSV файл только один раз
+                    if file_path not in csv_files:
+                        csv_files[file_path] = pd.read_csv(file_path)
+                    
+                    df = csv_files[file_path]
+                    
+                    # Проверяем, есть ли строка с таким индексом
+                    if csv_row_index is not None and csv_row_index < len(df):
+                        row = df.iloc[csv_row_index]
+                        
+                        # Заменяем шаблоны на значения
+                        text = template
+                        for column in columns:
+                            if column in row:
+                                text = text.replace(f"{{{{{column}}}}}", str(row[column]))
+                                
+                        if not type_text(text, typing_speed):
                             return False
-                        for value in row:
-                            if not type_text(str(value), typing_speed):
-                                return False
-                            keyboard.press_and_release("tab")
+                            
                         keyboard.press_and_release("enter")
+                    else:
+                        QMessageBox.warning(None, "Ошибка", f"В CSV файле нет строки с индексом {csv_row_index}")
+                        return False
+                        
                 except Exception as e:
                     QMessageBox.warning(None, "Ошибка", f"Ошибка при чтении CSV: {str(e)}")
                     return False
@@ -82,15 +104,17 @@ def run_scenario(steps_list, mode="once", iterations=1, typing_speed=50):
 
     try:
         if mode == "Один раз" or mode == "Once":
-            execute_steps()
+            execute_steps(csv_row_index=0)
         elif mode == "Итерации" or mode == "Iterations":
-            for _ in range(iterations):
-                if not execute_steps():
+            for i in range(iterations):
+                if not execute_steps(csv_row_index=i):
                     break
         elif mode == "Цикл" or mode == "Loop":
+            i = 0
             while True:
-                if not execute_steps():
+                if not execute_steps(csv_row_index=i):
                     break
+                i += 1
     except Exception as e:
         QMessageBox.warning(None, "Ошибка", f"Произошла ошибка: {str(e)}")
 

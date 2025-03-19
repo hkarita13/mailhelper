@@ -10,7 +10,7 @@ main_script = os.path.join(current_dir, 'main.py')
 # Параметры компиляции
 PyInstaller.__main__.run([
     'main.py',  # Основной скрипт
-    '--name=MailingHelper',  # Имя выходного файла
+    '--name=HKMH0.2',  # Имя выходного файла
     '--onefile',  # Создать один EXE файл
     '--noconsole',  # Без консольного окна
     '--add-data=fonts;fonts',  # Добавить папку со шрифтами
